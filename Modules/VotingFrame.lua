@@ -63,7 +63,7 @@ function RCPLVotingFrame.SetCellRatio(rowFrame, frame, data, cols, row, realrow,
     local ratios = RCPLImporter:GetRatios()
     local playerRatio = nil
     for name, ratio in pairs(ratios) do
-        if name == playerNameShort then
+        if string.lower(name) == string.lower(playerNameShort) then
             RCPreLoot.DebugPrint(name .. " has ratio: " .. tostring(ratio))
             playerRatio = ratio
             break
@@ -72,16 +72,10 @@ function RCPLVotingFrame.SetCellRatio(rowFrame, frame, data, cols, row, realrow,
 
     if not playerRatio then
         frame.text:SetText(COLOR_RED.."?")
-    elseif playerRatio >= 75 then
+    elseif playerRatio >= 999 then
         frame.text:SetText(COLOR_GREEN..playerRatio)
-    elseif playerRatio < 75 and playerRatio >= 50 then
-        frame.text:SetText(COLOR_YELLOW..playerRatio)
-    elseif playerRatio < 50 and playerRatio >= 25 then
-        frame.text:SetText(COLOR_ORANGE..playerRatio)
-    elseif playerRatio < 25 then
-        frame.text:SetText(COLOR_RED..playerRatio)
     else
-        frame.text:SetText(COLOR_GREY..playerRatio)
+        frame.text:SetText(COLOR_YELLOW..playerRatio)
     end
     data[realrow].cols[column].value = playerRatio or -1
 end

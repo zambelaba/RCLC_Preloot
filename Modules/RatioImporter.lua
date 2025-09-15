@@ -39,7 +39,7 @@ local function showFrame()
     frame:SetLayout("List")
 
     local editbox = AceGUI:Create("MultiLineEditBox")
-    editbox:SetLabel("Insert JSON / Base64 here:")
+    editbox:SetLabel("Insert Base64 here:")
     editbox:DisableButton(true)
     editbox:SetFocus(true)
     editbox:SetFullWidth(true)

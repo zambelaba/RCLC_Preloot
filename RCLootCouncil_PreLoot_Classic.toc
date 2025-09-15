@@ -1,0 +1,27 @@
+## Interface: 20501
+## X-Min-Interface: 20501
+
+## Title: RCLootCouncil - PreLoot Classic
+## Version: 0.1.0-vanilla
+
+## Author: zambelaba
+## Notes: A WoW: Classic module for RCLootCouncil PreLoot
+## Dependencies: RCLootCouncil_Classic
+
+## X-Category: Guild
+## X-License: GNU Lesser General Public License version 3 (LGPLv3)
+## X-Github: https://github.com/zambelaba/RCLC_Preloot
+
+## SavedVariables: RCPLImporterDB
+
+# Libs
+Libs/LibStub/LibStub.lua
+Libs/LibJSON-1.0/LibJSON-1.0.lua
+Libs/LibBase64.lua
+
+## Classic Module
+core.lua
+
+## Overrides
+Modules\RatioImporter.lua
+Modules\VotingFrame.lua

@@ -63,24 +63,31 @@ end
 
 function RCPLImporter:ConvertInputToRatio(t, frame)
 
+    print("test Samblà")       
+
     self.ratios = {}
 
-    local status = false
-    local parsedTable = {}
+    if not t or t == "" then
+        if frame then frame:SetStatusText("No input provided") end
+        return
+    end
 
     -- Decode Base64
     local decoded_base64 = LibBase64:Decode(t)
 
-    -- Parse JSON into a Lua table
-    status, parsedTable = pcall(JSON.Deserialize, decoded_base64)
+    -- Parse JSON into a Lua table (JSON library should handle UTF-8)
+    local status, parsedTable = pcall(JSON.Deserialize, decoded_base64)
     
     if not status then
-        frame:SetStatusText(RCPLImporter:strsplit(parsedTable, ":")[3] .. RCPLImporter:strsplit(parsedTable, ":")[4])
+        if frame then
+            frame:SetStatusText(tostring(parsedTable))
+        end
     else
         for k, v in pairs(parsedTable) do
             -- convert value to number if needed
             local num = tonumber(v)
-            if num then
+            if num then    
+                print("Setting ratio for key " .. tostring(k) .. " to " .. tostring(num))            
                 self.ratios[k] = num
             else
                 print("Warning: value for key " .. tostring(k) .. " is not a number")

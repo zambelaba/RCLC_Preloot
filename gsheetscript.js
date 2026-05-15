@@ -49,6 +49,11 @@ function process_raid_logs_loots() {
 
   // Load prio item IDs (items with coeff 0)
   const prioIds = getPrioItemIds();
+  const rosterPlayers = getRatioPresenceRoster(ss);
+  if (rosterPlayers === null) {
+    Logger.log('Skipping loot processing: Ratio Présence roster sheet not found.');
+    return;
+  }
 
   // Read all rows from row 2 to lastRow
   const dataRange = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
@@ -56,6 +61,7 @@ function process_raid_logs_loots() {
 
   const allItems = []; // array of {date, player, itemID, itemName} objects
   const playerSet = new Set(); // to collect unique player names
+  let skippedNonRosterItems = 0;
 
   for (let i = 0; i < rows.length; i++) {
     const rowIndex = i + 2; // actual sheet row
@@ -91,11 +97,13 @@ function process_raid_logs_loots() {
         continue;
       }
 
-      let player = record.player || record.owner || '';
-      // remove suffix -Thunderstrike if present
-      player = player.replace(/-Thunderstrike$/i, '');
-      // capitalize first letter
-      player = player.charAt(0).toUpperCase() + player.slice(1);
+      const playerKey = getRosterPlayerKey(record.player || record.owner || '');
+      if (!rosterPlayers.has(playerKey)) {
+        skippedNonRosterItems++;
+        continue;
+      }
+
+      const player = rosterPlayers.get(playerKey);
       
       const itemName = record.itemName || record.item || '';
       const itemID = record.itemID || '';
@@ -145,7 +153,62 @@ function process_raid_logs_loots() {
   // Update loot counts in ratio sheet
   updateLootCounts(ss, allItems);
 
-  Logger.log('Processed ' + allItems.length + ' items.');
+  Logger.log('Processed ' + allItems.length + ' items. Skipped ' + skippedNonRosterItems + ' non-roster items.');
+}
+
+function getRatioPresenceSheet(ss) {
+  const sheet = ss.getSheetByName('Ratio Présence/Loot (Préloot)');
+  if (!sheet) {
+    Logger.log('Ratio Présence/Loot (Préloot) sheet not found.');
+  }
+
+  return sheet;
+}
+
+function normalizePlayerName(playerName) {
+  const player = String(playerName || '')
+    .trim()
+    .replace(/-Thunderstrike$/i, '');
+
+  if (!player) {
+    return '';
+  }
+
+  return player.charAt(0).toUpperCase() + player.slice(1);
+}
+
+function getRosterPlayerKey(playerName) {
+  return normalizePlayerName(playerName).toLowerCase();
+}
+
+function getRatioPresenceRoster(ss) {
+  const ratioSheet = getRatioPresenceSheet(ss);
+
+  if (!ratioSheet) {
+    return null;
+  }
+
+  const lastRow = ratioSheet.getLastRow();
+  if (lastRow < 3) {
+    Logger.log('No player rows found in ratio sheet roster (need at least row 3).');
+    return new Map();
+  }
+
+  const playerRange = ratioSheet.getRange(3, 1, lastRow - 2, 1);
+  const playerNames = playerRange.getValues();
+  const rosterPlayers = new Map();
+
+  for (let i = 0; i < playerNames.length; i++) {
+    const playerName = normalizePlayerName(playerNames[i][0]);
+    const playerKey = getRosterPlayerKey(playerName);
+
+    if (playerName && !rosterPlayers.has(playerKey)) {
+      rosterPlayers.set(playerKey, playerName);
+    }
+  }
+
+  Logger.log('Loaded ' + rosterPlayers.size + ' roster players from Ratio Présence.');
+  return rosterPlayers;
 }
 
 /** Get all prio item IDs from the "Prio items" sheet (column X) */
@@ -350,10 +413,9 @@ function populateLootDetails(ss, allItems, sortedPlayers) {
 
 /** Update loot counts in the Ratio Présence/Loot (Préloot) sheet */
 function updateLootCounts(ss, allItems) {
-  const ratioSheet = ss.getSheetByName('Ratio Présence/Loot (Préloot)');
+  const ratioSheet = getRatioPresenceSheet(ss);
   
   if (!ratioSheet) {
-    Logger.log('Ratio Présence/Loot (Préloot) sheet not found.');
     return;
   }
 
@@ -663,10 +725,9 @@ function fetchWarcraftLogsGuildAttendance(raidCode) {
 
 /** Update attendance counts in the Ratio Présence/Loot (Préloot) sheet */
 function updateAttendanceCounts(ss, attendanceMap) {
-  const ratioSheet = ss.getSheetByName('Ratio Présence/Loot (Préloot)');
+  const ratioSheet = getRatioPresenceSheet(ss);
   
   if (!ratioSheet) {
-    Logger.log('Ratio Présence/Loot (Préloot) sheet not found.');
     return;
   }
 

@@ -1,13 +1,16 @@
 /** Generate ratio for import */
 function writeJsonToCell() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const data = sheet.getDataRange().getValues();
+  const watchedSheetName = "Ratio Présence/Loot (Préloot)";
+  const targetSheetName = "Admin";
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const watchedSheet = spreadsheet.getSheetByName(watchedSheetName);
+  const data = watchedSheet.getDataRange().getValues();
   let obj = {};
 
   // Loop through rows, skipping the header row
   for (let i = 2; i < data.length; i++) {
     const key = data[i][0];    // Column A (index 0)
-    const value = data[i][12]; // Column N (index 13)
+    const value = data[i][9].toFixed(3); // Column J (index 9)    
 
     Logger.log(`Ligne ${i+1} | key="${key}" | value="${value}"`);
 
@@ -25,8 +28,20 @@ function writeJsonToCell() {
 
   // Write the JSON into cell U3
   Logger.log("Base64 généré : " + base64String);
-  sheet.getRange("S7").setValue(base64String);
+  const targetSheet = spreadsheet.getSheetByName(targetSheetName);
+  targetSheet.getRange("C2").setValue(base64String);
   Logger.log("Écriture effectuée");
+}
+
+function resetAdminImportRatioCell() {
+  const targetSheetName = "Admin";
+  const targetCell = "C2";
+
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const targetSheet = spreadsheet.getSheetByName(targetSheetName);
+
+  // Reset the cell
+  targetSheet.getRange(targetCell).clearContent();
 }
 
 /** Process raid logs sheets export */
@@ -47,12 +62,21 @@ function process_raid_logs_loots() {
 
   const colC = 3; // column C (JSON payload)
 
+  // Load prio item IDs (items with coeff 0)
+  const prioIds = getPrioItemIds();
+  const rosterPlayers = getRatioPresenceRoster(ss);
+  if (rosterPlayers === null) {
+    Logger.log('Skipping loot processing: Ratio Présence roster sheet not found.');
+    return;
+  }
+
   // Read all rows from row 2 to lastRow
   const dataRange = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
   const rows = dataRange.getValues();
 
   const allItems = []; // array of {date, player, itemID, itemName} objects
   const playerSet = new Set(); // to collect unique player names
+  let skippedNonRosterItems = 0;
 
   for (let i = 0; i < rows.length; i++) {
     const rowIndex = i + 2; // actual sheet row
@@ -88,11 +112,13 @@ function process_raid_logs_loots() {
         continue;
       }
 
-      let player = record.player || record.owner || '';
-      // remove suffix -Thunderstrike if present
-      player = player.replace(/-Thunderstrike$/i, '');
-      // capitalize first letter
-      player = player.charAt(0).toUpperCase() + player.slice(1);
+      const playerKey = getRosterPlayerKey(record.player || record.owner || '');
+      if (!rosterPlayers.has(playerKey)) {
+        skippedNonRosterItems++;
+        continue;
+      }
+
+      const player = rosterPlayers.get(playerKey);
       
       const itemName = record.itemName || record.item || '';
       const itemID = record.itemID || '';
@@ -101,10 +127,27 @@ function process_raid_logs_loots() {
       // determine coefficient based on instance
       let coeff = 1;
       if (record.instance && typeof record.instance === 'string') {
-        if (record.instance.startsWith('Kara')) {
-          coeff = 1;
+        if (record.instance.includes('Kara') ||
+            record.instance.includes('Gruul') ||
+            record.instance.includes('Magh')
+          ) {
+          const recordDate = new Date(record.date);
+          const p2StartDate = new Date('2026-05-12');
+
+          if (recordDate > p2StartDate) {
+            coeff = 0.33;
+          } else {
+            coeff = 1;
+          }
         }
-        // future rules can go here
+        else{
+          coeff = 1
+        }
+      }
+
+      // Check if item is in prio list (coefficient 0)
+      if (prioIds.has(String(itemID))) {
+        coeff = 0;
       }
 
       allItems.push({
@@ -125,7 +168,97 @@ function process_raid_logs_loots() {
   // Update loot counts in ratio sheet
   updateLootCounts(ss, allItems);
 
-  Logger.log('Processed ' + allItems.length + ' items.');
+  Logger.log('Processed ' + allItems.length + ' items. Skipped ' + skippedNonRosterItems + ' non-roster items.');
+
+  resetAdminImportRatioCell();
+}
+
+function getRatioPresenceSheet(ss) {
+  const sheet = ss.getSheetByName('Ratio Présence/Loot (Préloot)');
+  if (!sheet) {
+    Logger.log('Ratio Présence/Loot (Préloot) sheet not found.');
+  }
+
+  return sheet;
+}
+
+function normalizePlayerName(playerName) {
+  const player = String(playerName || '')
+    .trim()
+    .replace(/-Thunderstrike$/i, '');
+
+  if (!player) {
+    return '';
+  }
+
+  return player.charAt(0).toUpperCase() + player.slice(1);
+}
+
+function getRosterPlayerKey(playerName) {
+  return normalizePlayerName(playerName).toLowerCase();
+}
+
+function getRatioPresenceRoster(ss) {
+  const ratioSheet = getRatioPresenceSheet(ss);
+
+  if (!ratioSheet) {
+    return null;
+  }
+
+  const lastRow = ratioSheet.getLastRow();
+  if (lastRow < 3) {
+    Logger.log('No player rows found in ratio sheet roster (need at least row 3).');
+    return new Map();
+  }
+
+  const playerRange = ratioSheet.getRange(3, 1, lastRow - 2, 1);
+  const playerNames = playerRange.getValues();
+  const rosterPlayers = new Map();
+
+  for (let i = 0; i < playerNames.length; i++) {
+    const playerName = normalizePlayerName(playerNames[i][0]);
+    const playerKey = getRosterPlayerKey(playerName);
+
+    if (playerName && !rosterPlayers.has(playerKey)) {
+      rosterPlayers.set(playerKey, playerName);
+    }
+  }
+
+  Logger.log('Loaded ' + rosterPlayers.size + ' roster players from Ratio Présence.');
+  return rosterPlayers;
+}
+
+/** Get all prio item IDs from the "Prio items" sheet (column X) */
+function getPrioItemIds() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const prioSheet = ss.getSheetByName('Prio items');
+  
+  if (!prioSheet) {
+    Logger.log('Prio items sheet not found.');
+    return new Set();
+  }
+
+  const colX = 24; // column X
+  const lastRow = prioSheet.getLastRow();
+  
+  if (lastRow < 2) {
+    return new Set();
+  }
+
+  // Read column X from row 2 onwards
+  const range = prioSheet.getRange(2, colX, lastRow - 1, 1);
+  const values = range.getValues();
+  
+  const prioIds = new Set();
+  for (let i = 0; i < values.length; i++) {
+    const itemId = values[i][0];
+    if (itemId && itemId !== '') {
+      prioIds.add(String(itemId)); // convert to string for comparison
+    }
+  }
+  
+  Logger.log('Loaded ' + prioIds.size + ' prio item IDs');
+  return prioIds;
 }
 
 /** Check if a record should be processed */
@@ -283,7 +416,7 @@ function populateLootDetails(ss, allItems, sortedPlayers) {
       detailsSheet.getRange(3, raidDateCol, rowData.length, 1).setNumberFormat('@');
       // set item_id and coeff columns as integer
       detailsSheet.getRange(3, itemIdCol, rowData.length, 1).setNumberFormat('0');
-      detailsSheet.getRange(3, coeffCol, rowData.length, 1).setNumberFormat('0');
+      detailsSheet.getRange(3, coeffCol, rowData.length, 1).setNumberFormat('0.00');
       // add vertical separator right border after each player block
       const sepCol = coeffCol;
       detailsSheet.getRange(1, sepCol, rowData.length + 2, 1)
@@ -297,10 +430,9 @@ function populateLootDetails(ss, allItems, sortedPlayers) {
 
 /** Update loot counts in the Ratio Présence/Loot (Préloot) sheet */
 function updateLootCounts(ss, allItems) {
-  const ratioSheet = ss.getSheetByName('Ratio Présence/Loot (Préloot)');
+  const ratioSheet = getRatioPresenceSheet(ss);
   
   if (!ratioSheet) {
-    Logger.log('Ratio Présence/Loot (Préloot) sheet not found.');
     return;
   }
 
@@ -610,10 +742,9 @@ function fetchWarcraftLogsGuildAttendance(raidCode) {
 
 /** Update attendance counts in the Ratio Présence/Loot (Préloot) sheet */
 function updateAttendanceCounts(ss, attendanceMap) {
-  const ratioSheet = ss.getSheetByName('Ratio Présence/Loot (Préloot)');
+  const ratioSheet = getRatioPresenceSheet(ss);
   
   if (!ratioSheet) {
-    Logger.log('Ratio Présence/Loot (Préloot) sheet not found.');
     return;
   }
 

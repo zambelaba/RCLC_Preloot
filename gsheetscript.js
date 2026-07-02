@@ -1,5 +1,10 @@
 /** Generate ratio for import */
 function writeJsonToCell() {
+  writeRatioForRCLCInAdmin();
+  writeRatioForGargulInAdmin();
+}
+
+function writeRatioForRCLCInAdmin() {
   const watchedSheetName = "Ratio Présence/Loot (Préloot)";
   const targetSheetName = "Admin";
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -30,18 +35,54 @@ function writeJsonToCell() {
   Logger.log("Base64 généré : " + base64String);
   const targetSheet = spreadsheet.getSheetByName(targetSheetName);
   targetSheet.getRange("C2").setValue(base64String);
-  Logger.log("Écriture effectuée");
+  Logger.log("Écriture RCLC effectuée");
+}
+
+/** Generate Gargul ratio for import */
+function writeRatioForGargulInAdmin() {
+  const watchedSheetName = "Ratio Présence/Loot (Préloot)";
+  const targetSheetName = "Admin";
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const watchedSheet = spreadsheet.getSheetByName(watchedSheetName);
+  const data = watchedSheet.getDataRange().getValues();
+  let obj = {};
+
+  // Loop through rows, skipping the header row
+  for (let i = 2; i < data.length; i++) {
+    const key = data[i][0]; // Column A (index 0)
+    const attendanceValue = (Number(data[i][4]) || 0) + (Number(data[i][5]) || 0); // Columns E + F
+    const lootCountValue = Number(data[i][7]) || 0; // Column H (index 7)
+
+    Logger.log(`Ligne ${i+1} | key="${key}" | attendance="${attendanceValue}" | lootCount="${lootCountValue}"`);
+
+    // Make sure the key exists, but allow values = 0
+    if (key !== "" && key !== null) {
+      obj[key] = [attendanceValue, lootCountValue];
+    }
+  }
+
+  const jsonString = JSON.stringify(obj, null, 2);
+  
+  // Create blob and base64 encode directly
+  const blob = Utilities.newBlob(jsonString, 'text/plain');
+  const base64String = Utilities.base64Encode(blob.getBytes());
+
+  // Write the JSON into cell U3
+  Logger.log("Base64 généré : " + base64String);
+  const targetSheet = spreadsheet.getSheetByName(targetSheetName);
+  targetSheet.getRange("D2").setValue(base64String);
+  Logger.log("Écriture Gargul effectuée");
 }
 
 function resetAdminImportRatioCell() {
   const targetSheetName = "Admin";
-  const targetCell = "C2";
 
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const targetSheet = spreadsheet.getSheetByName(targetSheetName);
 
   // Reset the cell
-  targetSheet.getRange(targetCell).clearContent();
+  targetSheet.getRange("C2").clearContent();
+  targetSheet.getRange("D2").clearContent();
 }
 
 /** Process raid logs sheets export */
